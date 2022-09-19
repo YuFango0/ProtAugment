@@ -13,6 +13,7 @@ def get_jsonl_data(jsonl_path: str):
         for line in file:
             j = json.loads(line.strip())
             out.append(j)
+    # out is a list; out[1] is a dictionary，內容是檔案的第一行
     return out
 
 
@@ -56,11 +57,17 @@ def get_tsv_data(tsv_path: str, label: str = None):
 def raw_data_to_dict(data, shuffle=True):
     labels_dict = collections.defaultdict(list)
     for item in data:
+        # 以 label 的文字為 key, 其 value 為一個 list ，裡面擁有同樣 label 的那幾行(list 裡面的元素的 dict)
         labels_dict[item['label']].append(item)
     labels_dict = dict(labels_dict)
-    if shuffle:
+    if shuffle:     # 可以直接打亂的
         for key, val in labels_dict.items():
             random.shuffle(val)
+
+    else:       # 要記得順序的
+        for key, val in labels_dict.items():
+            for v in range(len(val)):
+                val[v]['index'] = v
     return labels_dict
 
 
@@ -95,9 +102,13 @@ class UnlabeledDataLoader:
 
 
 class FewShotDataLoader:
-    def __init__(self, file_path, unlabeled_file_path: str = None):
+    def __init__(self, file_path, unlabeled_file_path: str = None, aug: int = 0):
         self.raw_data = get_jsonl_data(file_path)
-        self.data_dict = raw_data_to_dict(self.raw_data, shuffle=True)
+        self.aug = aug
+        if aug:
+            self.data_dict = raw_data_to_dict(self.raw_data, shuffle=False)
+        else:
+            self.data_dict = raw_data_to_dict(self.raw_data, shuffle=True)
         self.unlabeled_file_path = unlabeled_file_path
         if self.unlabeled_file_path:
             self.unlabeled_data_loader = UnlabeledDataLoader(file_path=self.unlabeled_file_path)
@@ -106,20 +117,50 @@ class FewShotDataLoader:
         episode = dict()
         if n_classes:
             n_classes = min(n_classes, len(self.data_dict.keys()))
+            # rand_keys 是一個長度為 n_classes 的 ndarray，存放 label 名稱
             rand_keys = np.random.choice(list(self.data_dict.keys()), n_classes, replace=False)
-
             assert min([len(val) for val in self.data_dict.values()]) >= n_support + n_query + n_unlabeled
 
-            for key, val in self.data_dict.items():
-                random.shuffle(val)
+            if self.aug:
+                # 有擴充資料，不能打亂
+                # episode["xs"] 裡面是一個長度為 n_classes /類別數量 的 list，每一個 list 包含一個長度為 n_support 的 list，
+                # 其中元素是每一個行 (dictionary)。episode["xs"][0][1] 為第 0 個類別的第一句話,
+                # 例如 {'sentence': 'Please help me change my PIN.', 'label': 'change_pin'}
+                episode["xs"] = []
+                episode["xq"] = []
+                for k in rand_keys:
+                    select_index = random.sample(range(0, len(self.data_dict[k]), 2), n_support + n_query)
+                    
+                    # support set
+                    supp_same_class = []
+                    for supp_i in range(n_support):
+                        supp_same_class.append(self.data_dict[k][select_index[supp_i]])
+                        supp_same_class.append(self.data_dict[k][select_index[supp_i]+1])
+                    episode["xs"].append(supp_same_class)
 
-            if n_support:
-                episode["xs"] = [[self.data_dict[k][i] for i in range(n_support)] for k in rand_keys]
-            if n_query:
-                episode["xq"] = [[self.data_dict[k][n_support + i] for i in range(n_query)] for k in rand_keys]
+                    # query set
+                    query_same_class = []
+                    for que_i in range(n_support, n_support + n_query):
+                        query_same_class.append(self.data_dict[k][select_index[que_i]])
+                        # query_same_class.append(self.data_dict[k][select_index[que_i]+1])
+                    episode["xq"].append(query_same_class)
 
-            if n_unlabeled:
-                episode['xu'] = [item for k in rand_keys for item in self.data_dict[k][n_support + n_query:n_support + n_query + n_unlabeled]]
+                if n_unlabeled:
+                    pass 
+
+            else:
+                # 可以直接打亂，抽取前面幾個
+                for key, val in self.data_dict.items():
+                    random.shuffle(val)
+
+                if n_support:
+                    episode["xs"] = [[self.data_dict[k][i] for i in range(n_support)] for k in rand_keys]
+
+                if n_query:
+                    episode["xq"] = [[self.data_dict[k][n_support + i] for i in range(n_query)] for k in rand_keys]
+
+                if n_unlabeled:
+                    episode['xu'] = [item for k in rand_keys for item in self.data_dict[k][n_support + n_query:n_support + n_query + n_unlabeled]]
 
         if n_augment:
             episode = dict(**episode, **self.unlabeled_data_loader.create_episode(n_augment=n_augment))

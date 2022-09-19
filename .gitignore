@@ -14,3 +14,6 @@ transformer_models
 paraphrase/fine-tune-BART/runs/
 paraphrase/fine-tune-BART/all_results.json
 results.ods
+
+# Data
+data/*

@@ -1,6 +1,4 @@
-#!/usr/bin/env bash
-
-
+# #!/usr/bin/env bash
 # # Activate environment
 # source .venv/bin/activate
 
@@ -8,6 +6,8 @@
 # if [[ -f ".envrc" ]]; then
 #     source .envrc
 # fi
+
+# 上面是我把他先註解掉的，因為我用的是 conda
 
 # Simple check on the gpu we will be using
 echo "CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES}"
@@ -19,5 +19,4 @@ command -v nvidia-smi >/dev/null && {
     :
 }
 
-# Run the script
-PYTHONPATH=. python models/proto/protaugment.py $@
+PYTHONPATH=. python models/proto/protonet_modify.py $@
